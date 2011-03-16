@@ -1,0 +1,3 @@
+#!/bin/bash
+
+ls nvm -F | grep -P '^v.*/$' | sed -e 's/\///' | sed -e 's/v//'

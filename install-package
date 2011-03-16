@@ -1,0 +1,10 @@
+#!/bin/bash
+
+package=$1
+package_version=$2
+node_version=$3
+
+. ./nvm/nvm.sh
+nvm use $node_version > /dev/null 2>&1
+
+npm install $package@$package_version
