@@ -107,6 +107,8 @@ function addMissingTests(callback) {
 
 function findTestsToRun(callback) {
     Test.find({installAttempted:false, testAttempted:false}).execFind(callback);
+    //Test.find({packageName:'gracie', packageVersion:'0.2.1', nodeVersion:'0.4.2'}).limit(100).execFind(callback); //has tests, passes
+    //Test.find({packageName:'apac', packageVersion:'0.0.4', nodeVersion:'0.4.2'}).limit(100).execFind(callback); //no tests
     //Test.find({packageName:'seq', packageVersion:'0.0.8', nodeVersion:'0.4.2'}).limit(100).execFind(callback); //fails to install
     //Test.find({packageName:'sfml', packageVersion:'0.0.1', nodeVersion:'0.4.2'}).limit(100).execFind(callback); //prompts for sudo password
     //Test.find({packageName:'abbrev', packageVersion:'1.0.2', nodeVersion:'0.4.1'}).limit(100).execFind(callback); //test causes fatal error
@@ -116,6 +118,35 @@ function findTestsToRun(callback) {
     //FAILED: ./install-package ace 0.1.6 0.4.1
     //FAILED: ./test-package addressable 0.2.0 0.4.1
 };
+
+function packageHasTests(test, callback) {
+    var command, child, childExited, timeoutSeconds;
+    timeoutSeconds = 20;
+    childExited = false;
+    command = [
+          "npm view"
+        , "--silent"
+        , test.packageName + '@' + test.packageVersion
+        , "scripts.test"
+    ].join(' ');
+    console.log('STARTING: ' + command);
+    child = exec(
+        command,
+        { timeout: timeoutSeconds * 1000 },
+        function(err, stdout, stderr) {
+            if (err) return callback(err);
+            var hasTests;
+            console.log((err ? 'FAILED: ' : 'FINISHED: ') + command);
+            childExited = true;
+            if (err) return callback(err);
+            hasTests = /\S/.test(stdout);
+            test.isTestable = hasTests;
+            test.save(function(err2) {
+                callback(err || err2);
+            });
+        }
+    );
+}
 
 function installPackageForTest(test, callback) {
     var command, child, childExited, timeoutSeconds;
@@ -178,10 +209,16 @@ function executeTest(test, callback) {
 function runTest(test, callback) {
     step(
         function() {
+            packageHasTests(test, this);
+        },
+        function(err) {
+            if (err) return err;
+            if (!test.isTestable) console.log('Package does not support automated testing.');
+            if (!test.isTestable) return 'Package does not support automated testing.';
             installPackageForTest(test, this);
         },
         function(err) {
-            if (err) return null;
+            if (err) return err;
             executeTest(test, this);
         },
         callback
@@ -216,21 +253,26 @@ function runMultipleTests(tests, callback) {
 function main() {
     step(
         function () {
-            console.log('adding missing tests...');
-            addMissingTests(this);
-        },
-        function (err, addedTests) {
-            console.log('added ' + addedTests.length + ' tests');
+            //console.log('adding missing tests...');
+            //addMissingTests(this);
+        //},
+        //function (err, addedTests) {
+            //console.log('added ' + addedTests.length + ' tests');
             console.log('finding tests to run...');
             findTestsToRun(this);
         },
         function (err, testsToRun) {
+            if (err) return err;
             console.log('found ' + testsToRun.length + ' tests to be run');
             console.log('executing tests...');
             runMultipleTests(testsToRun, this);
         },
         function(err) {
-            console.log('done');
+            if (err) {
+                console.log('error: ' + err);
+            } else {
+                console.log('done');
+            }
             mongoose.connection.close();
         }
     );
